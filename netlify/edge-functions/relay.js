@@ -1,9 +1,14 @@
-// Netlify Edge Function - Single TARGET variable support
-export default async function handler(request) {
-  let TARGET = Netlify.env.get("TARGET") || "";
+// Netlify Edge Function - Full working version
+export default async function handler(request, context) {
+  // درست خواندن متغیر محیطی - بدون نیاز به شی Netlify
+  let TARGET = Deno.env.get("TARGET") || "";
 
   if (!TARGET) {
-    return new Response("Service configuration error", { status: 503 });
+    console.error("TARGET environment variable is not set");
+    return new Response("Service configuration error: TARGET not set", { 
+      status: 503,
+      headers: { "Content-Type": "text/plain" }
+    });
   }
 
   try {
@@ -21,6 +26,7 @@ export default async function handler(request) {
 
     for (const [key, value] of request.headers) {
       const k = key.toLowerCase();
+      // حذف هدرهای غیرضروری Netlify
       if (k.startsWith("x-nf-") || k.startsWith("x-netlify-") || 
           k === "host" || k === "connection" || k === "keep-alive") {
         continue;
@@ -45,6 +51,8 @@ export default async function handler(request) {
 
     const responseHeaders = new Headers(upstream.headers);
     responseHeaders.delete("transfer-encoding");
+    // اضافه کردن هدر برای دیباگ (اختیاری)
+    responseHeaders.set("X-Relay-Target", TARGET);
 
     return new Response(upstream.body, {
       status: upstream.status,
@@ -52,9 +60,10 @@ export default async function handler(request) {
     });
 
   } catch (error) {
-    console.error("Relay error:", error);
-    return new Response("Service temporarily unavailable", { 
-      status: 502 
+    console.error("Relay error:", error.message);
+    return new Response("Service temporarily unavailable: " + error.message, { 
+      status: 502,
+      headers: { "Content-Type": "text/plain" }
     });
   }
 }
