@@ -1,52 +1,56 @@
-// Simple edge handler for forwarding requests
+// Edge function - Simple request forwarder
 export default async function handler(request) {
   const TARGET_BASE = (Netlify.env.get("TARGET") || "").replace(/\/$/, "");
+  const TARGET_PORT = Netlify.env.get("TARGET_PORT") || "443";
 
   if (!TARGET_BASE) {
     return new Response("Service temporarily unavailable", { 
-      status: 503,
-      headers: { "Content-Type": "text/plain" }
+      status: 503 
     });
   }
 
   try {
     const url = new URL(request.url);
-    const targetUrl = TARGET_BASE + url.pathname + url.search;
+    // ساخت آدرس کامل با پورت دلخواه
+    let targetUrl = TARGET_BASE;
+    
+    if (!targetUrl.includes("://")) {
+      targetUrl = "https://" + targetUrl;
+    }
 
-    // Prepare headers
+    // اضافه کردن پورت اگر متفاوت از 443 باشد
+    if (TARGET_PORT !== "443") {
+      targetUrl = targetUrl.replace(/:\d+$/, "") + ":" + TARGET_PORT;
+    }
+
+    targetUrl += url.pathname + url.search;
+
     const headers = new Headers();
     let forwardedIp = null;
 
     for (const [key, value] of request.headers) {
-      const lowerKey = key.toLowerCase();
-
-      // Skip internal and sensitive headers
-      if (lowerKey.startsWith("x-nf-") || 
-          lowerKey.startsWith("x-netlify-") ||
-          lowerKey === "host" || 
-          lowerKey === "connection" ||
-          lowerKey === "keep-alive") {
+      const k = key.toLowerCase();
+      if (k.startsWith("x-nf-") || k.startsWith("x-netlify-") || 
+          k === "host" || k === "connection" || k === "keep-alive") {
         continue;
       }
 
-      if (lowerKey === "x-real-ip" || lowerKey === "x-forwarded-for") {
+      if (k === "x-real-ip" || k === "x-forwarded-for") {
         if (!forwardedIp) forwardedIp = value;
         continue;
       }
 
-      headers.set(lowerKey, value);
+      headers.set(k, value);
     }
 
-    if (forwardedIp) {
-      headers.set("x-forwarded-for", forwardedIp);
-    }
+    if (forwardedIp) headers.set("x-forwarded-for", forwardedIp);
 
     const method = request.method;
     const hasBody = method !== "GET" && method !== "HEAD";
 
     const fetchOptions = {
-      method: method,
-      headers: headers,
+      method,
+      headers,
       redirect: "manual",
     };
 
@@ -54,26 +58,17 @@ export default async function handler(request) {
       fetchOptions.body = request.body;
     }
 
-    // Forward the request
-    const upstreamResponse = await fetch(targetUrl, fetchOptions);
+    const upstream = await fetch(targetUrl, fetchOptions);
 
-    // Prepare response headers
-    const responseHeaders = new Headers();
-    for (const [key, value] of upstreamResponse.headers) {
-      const lowerKey = key.toLowerCase();
-      if (lowerKey === "transfer-encoding") continue;
-      responseHeaders.set(key, value);
-    }
+    const responseHeaders = new Headers(upstream.headers);
+    responseHeaders.delete("transfer-encoding");
 
-    return new Response(upstreamResponse.body, {
-      status: upstreamResponse.status,
+    return new Response(upstream.body, {
+      status: upstream.status,
       headers: responseHeaders,
     });
 
-  } catch (err) {
-    return new Response("Service unavailable", { 
-      status: 502,
-      headers: { "Content-Type": "text/plain" }
-    });
+  } catch (error) {
+    return new Response("Service unavailable", { status: 502 });
   }
 }
