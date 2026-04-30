@@ -1,42 +1,60 @@
-// Simple Netlify Edge Function Relay
+// Netlify Edge Function - Single TARGET variable support
 export default async function handler(request) {
-  const TARGET = Netlify.env.get("TARGET") || "";
-  const PORT = Netlify.env.get("TARGET_PORT") || "2096";
+  let TARGET = Netlify.env.get("TARGET") || "";
 
   if (!TARGET) {
-    return new Response("Service unavailable", { status: 503 });
+    return new Response("Service configuration error", { status: 503 });
   }
 
   try {
+    // اگر کاربر https:// نگذاشته باشد، اضافه کن
+    if (!TARGET.startsWith("http")) {
+      TARGET = "https://" + TARGET;
+    }
+
     const url = new URL(request.url);
-    let targetUrl = TARGET;
+    const targetUrl = TARGET + url.pathname + url.search;
 
-    if (!targetUrl.startsWith("http")) {
-      targetUrl = "https://" + targetUrl;
+    // آماده‌سازی هدرها
+    const headers = new Headers();
+    let forwardedIp = null;
+
+    for (const [key, value] of request.headers) {
+      const k = key.toLowerCase();
+      if (k.startsWith("x-nf-") || k.startsWith("x-netlify-") || 
+          k === "host" || k === "connection" || k === "keep-alive") {
+        continue;
+      }
+      if (k === "x-real-ip" || k === "x-forwarded-for") {
+        if (!forwardedIp) forwardedIp = value;
+        continue;
+      }
+      headers.set(k, value);
     }
 
-    if (PORT !== "443") {
-      targetUrl = targetUrl.replace(/:\d+$/, "") + ":" + PORT;
-    }
+    if (forwardedIp) headers.set("x-forwarded-for", forwardedIp);
 
-    targetUrl += url.pathname + url.search;
-
-    const response = await fetch(targetUrl, {
+    const fetchOptions = {
       method: request.method,
-      headers: request.headers,
-      body: request.body,
-      redirect: "manual"
+      headers: headers,
+      redirect: "manual",
+      body: (request.method !== "GET" && request.method !== "HEAD") ? request.body : null,
+    };
+
+    const upstream = await fetch(targetUrl, fetchOptions);
+
+    const responseHeaders = new Headers(upstream.headers);
+    responseHeaders.delete("transfer-encoding");
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: responseHeaders,
     });
 
-    const headers = new Headers(response.headers);
-    headers.delete("transfer-encoding");
-
-    return new Response(response.body, {
-      status: response.status,
-      headers: headers
+  } catch (error) {
+    console.error("Relay error:", error);
+    return new Response("Service temporarily unavailable", { 
+      status: 502 
     });
-
-  } catch (e) {
-    return new Response("Service unavailable", { status: 502 });
   }
 }
