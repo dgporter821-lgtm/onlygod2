@@ -1,0 +1,15 @@
+{
+  "name": "edge-relay-function",
+  "version": "1.0.0",
+  "description": "Simple HTTP relay service",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "echo 'Build completed'",
+    "start": "netlify dev"
+  },
+  "devDependencies": {
+    "netlify-cli": "latest"
+  }
+}
