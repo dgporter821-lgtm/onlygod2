@@ -10,9 +10,3 @@
 # Optional: Cache settings to reduce suspicion
 [build.environment]
   NODE_VERSION = "18"
-
-# Simple redirect rules (helps to look more like a normal site)
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
